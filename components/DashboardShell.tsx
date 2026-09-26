@@ -1,0 +1,2 @@
+import Sidebar from './Sidebar';
+export default function DashboardShell({title,children}:{title:string;children:React.ReactNode}){return <div className="shell"><Sidebar/><main className="main"><header className="topbar"><div><div className="eyebrow">MAXMOVE LOGISTICS • LAGOS, NIGERIA</div><h1>{title}</h1></div><div className="user"><div><strong>Operations Admin</strong><small>Backoffice</small></div><div className="avatar">M</div></div></header><section className="content">{children}</section></main></div>}

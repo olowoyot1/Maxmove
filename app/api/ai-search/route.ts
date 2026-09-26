@@ -1,0 +1,13 @@
+import { NextResponse } from 'next/server';
+import { db } from '@/lib/prisma';
+import { demoShipments } from '@/lib/demo-data';
+function fallbackAnswer(rows:any[]){ if(!rows.length) return 'I could not find a matching shipment or activity in the MaxMove company database.'; const s=rows[0]; const status=String(s.status).replaceAll('_',' ').toLowerCase(); return `According to MaxMove's company records, ${s.trackingNumber} is currently ${status} at ${s.location || 'the latest recorded location'}. It is moving from ${s.origin} to ${s.destination}.${s.eta ? ` Estimated delivery: ${s.eta}.` : ''}`; }
+export async function POST(req:Request){
+ const {query}=await req.json(); if(!query?.trim()) return NextResponse.json({answer:'Ask where a shipment is, for example: “Where is MMX-2026-0002?”'});
+ let rows:any[]=[];
+ try { const shipments=await db.shipment.findMany({include:{trackingEvents:{orderBy:{timestamp:'desc'},take:5},order:{include:{customer:true}}},take:100,orderBy:{updatedAt:'desc'}}); rows=shipments.map(s=>({trackingNumber:s.trackingNumber,status:s.status,location:s.currentLocation||s.trackingEvents[0]?.location,origin:s.origin,destination:s.destination,eta:s.estimatedDelivery?.toISOString().slice(0,10),customer:s.order.customer.name,events:s.trackingEvents.map(e=>({status:e.status,location:e.location,note:e.note,timestamp:e.timestamp}))})); } catch { rows=demoShipments; }
+ const q=String(query).toLowerCase(); const tokens=q.split(/\s+/).filter((x:string)=>x.length>2 && !['where','what','when','the','shipment','currently','status','location','is','of','my'].includes(x));
+ const matches=rows.filter(r=>tokens.some((t:string)=>JSON.stringify(r).toLowerCase().includes(t))).slice(0,8);
+ if(process.env.OPENAI_API_KEY){ try { const prompt=`You are MaxMove Logistics shipment assistant. Answer ONLY from the supplied company database records. Never invent information. If the records do not answer the question, say so. Question: ${query}\nRecords: ${JSON.stringify(matches.length?matches:rows.slice(0,8))}`; const r=await fetch('https://api.openai.com/v1/chat/completions',{method:'POST',headers:{'Content-Type':'application/json',Authorization:`Bearer ${process.env.OPENAI_API_KEY}`},body:JSON.stringify({model:process.env.OPENAI_MODEL||'gpt-4.1-mini',messages:[{role:'system',content:'Use only MaxMove company database records.'},{role:'user',content:prompt}],temperature:0})}); if(r.ok){const j=await r.json(); return NextResponse.json({answer:j.choices?.[0]?.message?.content||fallbackAnswer(matches),matches:matches.slice(0,5),source:'company-database'});} } catch {} }
+ return NextResponse.json({answer:fallbackAnswer(matches),matches:matches.slice(0,5),source:'company-database'});
+}
